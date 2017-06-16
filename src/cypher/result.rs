@@ -2,7 +2,7 @@ use serde::de::DeserializeOwned;
 use serde_json;
 use serde_json::value::Value;
 
-use ::error::{GraphError, Neo4jError};
+use error::{GraphError, Neo4jError};
 
 pub trait ResultTrait {
     fn results(&self) -> &Vec<CypherResult>;
@@ -108,10 +108,12 @@ impl<'a> Row<'a> {
 impl<'a> Iterator for Rows<'a> {
     type Item = Row<'a>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.data.get(self.current_index).map(|data| {
-            self.current_index += 1;
-            Row::new(self.columns.as_ref(), data.row.as_ref())
-        })
+        self.data
+            .get(self.current_index)
+            .map(|data| {
+                     self.current_index += 1;
+                     Row::new(self.columns.as_ref(), data.row.as_ref())
+                 })
     }
 }
 

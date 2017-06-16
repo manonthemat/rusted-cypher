@@ -103,7 +103,7 @@ use hyper::Client;
 use hyper::header::{Headers, Location};
 use time::{self, Tm};
 
-use ::error::{GraphError, Neo4jError};
+use error::{GraphError, Neo4jError};
 use super::result::{CypherResult, ResultTrait};
 use super::statement::Statement;
 
@@ -211,18 +211,22 @@ impl<'a> Transaction<'a, Created> {
                                         self.headers,
                                         self.statements)?;
 
-        let mut result: TransactionResult = super::parse_response(&mut res)?;
+        let result: TransactionResult = super::parse_response(&mut res)?;
 
-        let transaction = res.headers.get::<Location>()
+        let transaction = res.headers
+            .get::<Location>()
             .map(|location| location.0.to_owned())
             .ok_or_else(|| {
-                error!("No transaction URI returned from server");
-                GraphError::Transaction("No transaction URI returned from server".to_owned())
-            })?;
+                            error!("No transaction URI returned from server");
+                            GraphError::Transaction("No transaction URI returned from server"
+                                                        .to_owned())
+                        })?;
 
-        let expires = time::strptime(&mut result.transaction.expires, DATETIME_RFC822)?;
+        let expires = time::strptime(&result.transaction.expires, DATETIME_RFC822)?;
 
-        debug!("Transaction started at {}, expires in {}", transaction, expires.rfc822z());
+        debug!("Transaction started at {}, expires in {}",
+               transaction,
+               expires.rfc822z());
 
         let transaction = Transaction {
             transaction: transaction,
@@ -253,8 +257,9 @@ impl<'a> Transaction<'a, Started> {
         self.add_statement(statement);
 
         let mut results = self.send()?;
-        let result = results.pop()
-            .ok_or(GraphError::Statement("Server returned no results".to_owned()))?;
+        let result =
+            results.pop()
+                .ok_or_else(|| GraphError::Statement("Server returned no results".to_owned()))?;
 
         Ok(result)
     }
@@ -263,13 +268,10 @@ impl<'a> Transaction<'a, Started> {
     pub fn send(&mut self) -> Result<Vec<CypherResult>, GraphError> {
         let mut statements = vec![];
         mem::swap(&mut statements, &mut self.statements);
-        let mut res = super::send_query(&self.client,
-                                        &self.transaction,
-                                        self.headers,
-                                        statements)?;
+        let mut res = super::send_query(&self.client, &self.transaction, self.headers, statements)?;
 
-        let mut result: TransactionResult = super::parse_response(&mut res)?;
-        self.expires = time::strptime(&mut result.transaction.expires, DATETIME_RFC822)?;
+        let result: TransactionResult = super::parse_response(&mut res)?;
+        self.expires = time::strptime(&result.transaction.expires, DATETIME_RFC822)?;
 
         Ok(result.results)
     }
@@ -277,10 +279,7 @@ impl<'a> Transaction<'a, Started> {
     /// Commits the transaction, returning the results
     pub fn commit(self) -> Result<Vec<CypherResult>, GraphError> {
         debug!("Commiting transaction {}", self.transaction);
-        let mut res = super::send_query(&self.client,
-                                        &self.commit,
-                                        self.headers,
-                                        self.statements)?;
+        let mut res = super::send_query(&self.client, &self.commit, self.headers, self.statements)?;
 
         let result: CommitResult = super::parse_response(&mut res)?;
         debug!("Transaction commited {}", self.transaction);
@@ -291,7 +290,8 @@ impl<'a> Transaction<'a, Started> {
     /// Rollback the transaction
     pub fn rollback(self) -> Result<(), GraphError> {
         debug!("Rolling back transaction {}", self.transaction);
-        let mut res = self.client.delete(&self.transaction)
+        let mut res = self.client
+            .delete(&self.transaction)
             .headers(self.headers.clone())
             .send()?;
 
@@ -305,11 +305,7 @@ impl<'a> Transaction<'a, Started> {
     ///
     /// All transactions have a timeout. Use this method to keep a transaction alive.
     pub fn reset_timeout(&mut self) -> Result<(), GraphError> {
-        super::send_query(&self.client,
-                          &self.transaction,
-                          self.headers,
-                          vec![])
-            .map(|_| ())
+        super::send_query(&self.client, &self.transaction, self.headers, vec![]).map(|_| ())
     }
 }
 
@@ -323,12 +319,10 @@ mod tests {
     fn get_headers() -> Headers {
         let mut headers = Headers::new();
 
-        headers.set(Authorization(
-            Basic {
-                username: "neo4j".to_owned(),
-                password: Some("neo4j".to_owned()),
-            }
-        ));
+        headers.set(Authorization(Basic {
+                                      username: "neo4j".to_owned(),
+                                      password: Some("neo4j".to_owned()),
+                                  }));
 
         headers.set(ContentType::json());
 
@@ -354,7 +348,8 @@ mod tests {
 
         let (transaction, results) = Transaction::new(URL, &headers)
             .with_statement("MATCH (n:TEST_TRANSACTION_CREATE_COMMIT) RETURN n")
-            .begin().unwrap();
+            .begin()
+            .unwrap();
 
         assert_eq!(results[0].data.len(), 1);
 
@@ -362,8 +357,11 @@ mod tests {
 
         Transaction::new(URL, &headers)
             .with_statement("MATCH (n:TEST_TRANSACTION_CREATE_COMMIT) DELETE n")
-            .begin().unwrap()
-            .0.commit().unwrap();
+            .begin()
+            .unwrap()
+            .0
+            .commit()
+            .unwrap();
     }
 
     #[test]
@@ -384,7 +382,8 @@ mod tests {
 
         let (transaction, results) = Transaction::new(URL, &headers)
             .with_statement("MATCH (n:TEST_TRANSACTION_CREATE_ROLLBACK) RETURN n")
-            .begin().unwrap();
+            .begin()
+            .unwrap();
 
         assert_eq!(results[0].data.len(), 0);
 
@@ -398,8 +397,7 @@ mod tests {
         let (mut transaction, _) = Transaction::new(URL, &headers).begin().unwrap();
 
         let result = transaction
-            .exec(
-                "CREATE (n:TEST_TRANSACTION_QUERY_OPEN { name: 'Rust', safe: true }) RETURN n")
+            .exec("CREATE (n:TEST_TRANSACTION_QUERY_OPEN { name: 'Rust', safe: true }) RETURN n")
             .unwrap();
 
         assert_eq!(result.data.len(), 1);
